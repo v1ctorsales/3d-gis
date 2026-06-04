@@ -60,13 +60,13 @@ function AppContent() {
             <span
               className={`lang-toggle__option${lang === "en" ? " lang-toggle__option--active" : ""}`}
             >
-              <img src="public\gb.svg" alt="EN" width="20" height="14" />
+              <img src="/gb.svg" alt="EN" width="20" height="14" />
               EN-GB
             </span>
             <span
               className={`lang-toggle__option${lang === "pt-BR" ? " lang-toggle__option--active" : ""}`}
             >
-              <img src="public\br.svg" alt="EN" width="20" height="14" />
+              <img src="/br.svg" alt="EN" width="20" height="14" />
               PT-BR
             </span>
           </button>
