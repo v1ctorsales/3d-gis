@@ -43,10 +43,12 @@ import {
   makeSceneXZElevationSampler,
 } from "../../utils/geo";
 import SceneExporter from "./SceneExporter";
+import { useLanguage } from "../../contexts/LanguageContext";
 
 const OSM_ATTRIBUTION = "© OpenStreetMap contributors";
 
 export default function Viewer3D({ bbox, onBack }) {
+  const { t } = useLanguage();
   // --- Terrain data (loaded once per bbox) ---
   const [terrain, setTerrain] = useState({ status: "loading" });
   const [trackedBbox, setTrackedBbox] = useState(bbox);
@@ -490,10 +492,10 @@ export default function Viewer3D({ bbox, onBack }) {
   return (
     <div className={styles.viewer}>
       {terrain.status === "loading" && (
-        <div className={styles.statusOverlay}>Loading terrain…</div>
+        <div className={styles.statusOverlay}>{t.loadingTerrain}</div>
       )}
       {terrain.status === "error" && (
-        <div className={styles.statusOverlay}>Error: {terrain.error}</div>
+        <div className={styles.statusOverlay}>{t.errorPrefix} {terrain.error}</div>
       )}
 
       {buildResult && (
@@ -594,14 +596,14 @@ export default function Viewer3D({ bbox, onBack }) {
       )}
 
       <button type="button" className={styles.backButton} onClick={onBack}>
-        ← Back to map
+        {t.backToMap}
       </button>
 
       {terrain.status === "ready" && buildResult && (
         <div className={styles.panel}>
           <div className={styles.panelScroll}>
             <fieldset className={styles.group}>
-              <legend>Surface</legend>
+              <legend>{t.surface}</legend>
               <label className={styles.radio}>
                 <input
                   type="radio"
@@ -609,7 +611,7 @@ export default function Viewer3D({ bbox, onBack }) {
                   checked={surface === "imagery"}
                   onChange={() => setSurface("imagery")}
                 />
-                Satellite imagery
+                {t.satelliteImagery}
               </label>
               <label className={styles.radio}>
                 <input
@@ -618,7 +620,7 @@ export default function Viewer3D({ bbox, onBack }) {
                   checked={surface === "hypsometric"}
                   onChange={() => setSurface("hypsometric")}
                 />
-                Hypsometric tint
+                {t.hypsometricTint}
               </label>
               <label className={styles.radio}>
                 <input
@@ -627,7 +629,7 @@ export default function Viewer3D({ bbox, onBack }) {
                   checked={surface === "hillshade"}
                   onChange={() => setSurface("hillshade")}
                 />
-                Hillshade
+                {t.hillshade}
               </label>
               <label className={styles.radio}>
                 <input
@@ -636,7 +638,7 @@ export default function Viewer3D({ bbox, onBack }) {
                   checked={surface === "slope"}
                   onChange={() => setSurface("slope")}
                 />
-                Slope
+                {t.slope}
               </label>
               <label className={styles.radio}>
                 <input
@@ -645,17 +647,17 @@ export default function Viewer3D({ bbox, onBack }) {
                   checked={surface === "aspect"}
                   onChange={() => setSurface("aspect")}
                 />
-                Aspect
+                {t.aspect}
               </label>
               {surface === "hillshade" && (
                 <label className={styles.slider}>
-                  <span>Z-factor</span>
+                  <span>{t.zFactor}</span>
                   <span className={styles.value}>
                     {hillshadeZ.toFixed(1)}×
                     {hillshadeZAuto != null && (
                       <span className={styles.muted}>
                         {" "}
-                        (auto {hillshadeZAuto.toFixed(1)}×)
+                        ({t.auto} {hillshadeZAuto.toFixed(1)}×)
                       </span>
                     )}
                   </span>
@@ -671,13 +673,13 @@ export default function Viewer3D({ bbox, onBack }) {
               )}
               {surface === "hypsometric" && (
                 <label className={styles.slider}>
-                  <span>Band width</span>
+                  <span>{t.bandWidth}</span>
                   <span className={styles.value}>
                     {hypsoBandM} m
                     {hypsoBandAuto != null && (
                       <span className={styles.muted}>
                         {" "}
-                        (auto {Math.round(hypsoBandAuto)})
+                        ({t.auto} {Math.round(hypsoBandAuto)})
                       </span>
                     )}
                   </span>
@@ -696,19 +698,19 @@ export default function Viewer3D({ bbox, onBack }) {
             </fieldset>
 
             <fieldset className={styles.group}>
-              <legend>Overlays</legend>
+              <legend>{t.overlays}</legend>
               <label className={styles.check}>
                 <input
                   type="checkbox"
                   checked={showBuildings}
                   onChange={(e) => setShowBuildings(e.target.checked)}
                 />
-                Buildings
+                {t.buildings}
                 {buildings.status === "loading" && (
-                  <span className={styles.muted}> (loading…)</span>
+                  <span className={styles.muted}> {t.loading}</span>
                 )}
                 {buildings.status === "error" && (
-                  <span className={styles.error}> (failed)</span>
+                  <span className={styles.error}> {t.failed}</span>
                 )}
               </label>
               <div className={styles.checkRow}>
@@ -718,12 +720,12 @@ export default function Viewer3D({ bbox, onBack }) {
                     checked={showWater}
                     onChange={(e) => setShowWater(e.target.checked)}
                   />
-                  Water
+                  {t.water}
                   {water.status === "loading" && (
-                    <span className={styles.muted}> (loading…)</span>
+                    <span className={styles.muted}> {t.loading}</span>
                   )}
                   {water.status === "error" && (
-                    <span className={styles.error}> (failed)</span>
+                    <span className={styles.error}> {t.failed}</span>
                   )}
                   {water.status === "ready" &&
                     water.data.tier &&
@@ -733,7 +735,7 @@ export default function Viewer3D({ bbox, onBack }) {
                         title={water.data.tierDescription}
                       >
                         {" "}
-                        (reduced: {water.data.tier})
+                        ({t.reducedPrefix} {water.data.tier})
                       </span>
                     )}
                 </label>
@@ -744,8 +746,8 @@ export default function Viewer3D({ bbox, onBack }) {
                   }`}
                   onClick={() => setWaterSettingsOpen(!waterSettingsOpen)}
                   disabled={!showWater}
-                  aria-label="Water settings"
-                  title="Water settings"
+                  aria-label={t.waterSettings}
+                  title={t.waterSettings}
                 >
                   <svg
                     width="14"
@@ -768,18 +770,18 @@ export default function Viewer3D({ bbox, onBack }) {
                   checked={showRoads}
                   onChange={(e) => setShowRoads(e.target.checked)}
                 />
-                Roads
+                {t.roads}
                 {roads.status === "loading" && (
-                  <span className={styles.muted}> (loading…)</span>
+                  <span className={styles.muted}> {t.loading}</span>
                 )}
                 {roads.status === "error" && (
-                  <span className={styles.error}> (failed)</span>
+                  <span className={styles.error}> {t.failed}</span>
                 )}
               </label>
               {showWater && waterSettingsOpen && (
                 <div className={styles.subPanel}>
                   <label className={styles.slider}>
-                    <span>Y offset</span>
+                    <span>{t.yOffset}</span>
                     <span className={styles.value}>
                       {waterOffset >= 0 ? "+" : ""}
                       {waterOffset.toFixed(1)} m
@@ -800,9 +802,9 @@ export default function Viewer3D({ bbox, onBack }) {
             </fieldset>
 
             <fieldset className={styles.group}>
-              <legend>Terrain</legend>
+              <legend>{t.terrain}</legend>
               <label className={styles.slider}>
-                <span>Vertical exaggeration</span>
+                <span>{t.verticalExaggeration}</span>
                 <span className={styles.value}>{exaggeration.toFixed(1)}×</span>
                 <input
                   type="range"
@@ -820,7 +822,7 @@ export default function Viewer3D({ bbox, onBack }) {
                     checked={showContours}
                     onChange={(e) => setShowContours(e.target.checked)}
                   />
-                  Contour lines
+                  {t.contourLines}
                 </label>
                 <button
                   type="button"
@@ -829,8 +831,8 @@ export default function Viewer3D({ bbox, onBack }) {
                   }`}
                   onClick={() => setContourSettingsOpen(!contourSettingsOpen)}
                   disabled={!showContours}
-                  aria-label="Contour settings"
-                  title="Contour settings"
+                  aria-label={t.contourSettings}
+                  title={t.contourSettings}
                 >
                   <svg
                     width="14"
@@ -849,7 +851,7 @@ export default function Viewer3D({ bbox, onBack }) {
               </div>
               {showContours && (
                 <label className={styles.slider}>
-                  <span>Contour spacing</span>
+                  <span>{t.contourSpacing}</span>
                   <span className={styles.value}>{contourSpacing} m</span>
                   <input
                     type="range"
@@ -866,7 +868,7 @@ export default function Viewer3D({ bbox, onBack }) {
               {showContours && contourSettingsOpen && (
                 <div className={styles.subPanel}>
                   <label className={styles.slider}>
-                    <span>Color</span>
+                    <span>{t.color}</span>
                     <input
                       type="color"
                       value={contourColor}
@@ -874,7 +876,7 @@ export default function Viewer3D({ bbox, onBack }) {
                     />
                   </label>
                   <label className={styles.slider}>
-                    <span>Line width</span>
+                    <span>{t.lineWidth}</span>
                     <span className={styles.value}>
                       {contourWidth.toFixed(1)} px
                     </span>
@@ -890,7 +892,7 @@ export default function Viewer3D({ bbox, onBack }) {
                     />
                   </label>
                   <label className={styles.slider}>
-                    <span>Opacity</span>
+                    <span>{t.opacity}</span>
                     <span className={styles.value}>
                       {contourOpacity.toFixed(2)}
                     </span>
@@ -910,19 +912,19 @@ export default function Viewer3D({ bbox, onBack }) {
             </fieldset>
 
             <fieldset className={styles.group}>
-              <legend>Flood (static)</legend>
+              <legend>{t.floodStatic}</legend>
               <label className={styles.check}>
                 <input
                   type="checkbox"
                   checked={showFlood}
                   onChange={(e) => setShowFlood(e.target.checked)}
                 />
-                Show flood plane
+                {t.showFloodPlane}
               </label>
               {showFlood && (
                 <>
                   <label className={styles.slider}>
-                    <span>Water level</span>
+                    <span>{t.waterLevel}</span>
                     <span className={styles.value}>{floodLevel} m</span>
                     <input
                       type="range"
@@ -937,7 +939,7 @@ export default function Viewer3D({ bbox, onBack }) {
                   </label>
                   {flood && (
                     <div className={styles.stats}>
-                      {(flood.floodedFraction * 100).toFixed(1)}% inundated ·{" "}
+                      {(flood.floodedFraction * 100).toFixed(1)}{t.inundatedSuffix}{" "}
                       {(flood.floodedAreaM2 / 1_000_000).toFixed(2)} km²
                     </div>
                   )}
@@ -946,7 +948,7 @@ export default function Viewer3D({ bbox, onBack }) {
             </fieldset>
 
             <fieldset className={styles.group}>
-              <legend>Tools</legend>
+              <legend>{t.tools}</legend>
               <label className={styles.check}>
                 <input
                   type="checkbox"
@@ -960,37 +962,36 @@ export default function Viewer3D({ bbox, onBack }) {
                     }
                   }}
                 />
-                Measure tool
+                {t.measureTool}
               </label>
               {profileTool && (
                 <div className={styles.muted}>
-                  {profilePoints.length === 0 &&
-                    "Click terrain to set start point"}
-                  {profilePoints.length === 1 && "Click again to set end point"}
-                  {profilePoints.length === 2 && "Click again to reset"}
+                  {profilePoints.length === 0 && t.clickToSetStart}
+                  {profilePoints.length === 1 && t.clickToSetEnd}
+                  {profilePoints.length === 2 && t.clickToReset}
                 </div>
               )}
               {profileTool && previewProfile && (
                 <div className={styles.stats}>
-                  Distance: {(previewProfile.distanceM / 1000).toFixed(2)} km
+                  {t.distanceLabel} {(previewProfile.distanceM / 1000).toFixed(2)} km
                 </div>
               )}
             </fieldset>
 
             <div className={styles.stats}>
-              Area:{" "}
+              {t.areaLabel}{" "}
               {(
                 (buildResult.scale.widthM * buildResult.scale.depthM) /
                 1_000_000
               ).toFixed(1)}{" "}
-              km² · Elevation {Math.round(terrain.heightmap.minElevation)}–
+              km² · {t.elevationLabel} {Math.round(terrain.heightmap.minElevation)}–
               {Math.round(terrain.heightmap.maxElevation)} m
             </div>
           </div>
 
           <div className={styles.panelFooter}>
             <fieldset className={styles.group}>
-              <legend>Export</legend>
+              <legend>{t.export}</legend>
               <button
                 type="button"
                 className={styles.exportButton}
@@ -1003,7 +1004,7 @@ export default function Viewer3D({ bbox, onBack }) {
                   );
                 }}
               >
-                {exporting ? "Exporting…" : "Export GLB"}
+                {exporting ? t.exporting : t.exportGlb}
               </button>
             </fieldset>
           </div>

@@ -45,6 +45,7 @@ const MapView = forwardRef(function MapView({ onSelectionChange }, ref) {
   const mapRef = useRef(null);
   const drawRef = useRef(null);
   const lastFeatureIdRef = useRef(null);
+  const tooltipRef = useRef(null);
 
   // Stable ref to the callback so the effect can stay mount-only.
   const onSelectionChangeRef = useRef(onSelectionChange);
@@ -65,6 +66,16 @@ const MapView = forwardRef(function MapView({ onSelectionChange }, ref) {
 
   useEffect(() => {
     if (mapRef.current) return;
+
+    // Track cursor position for the area tooltip (direct DOM, no re-renders).
+    const handleMouseMove = (e) => {
+      const el = tooltipRef.current;
+      if (el) {
+        el.style.left = `${e.clientX + 14}px`;
+        el.style.top = `${e.clientY + 14}px`;
+      }
+    };
+    window.addEventListener("mousemove", handleMouseMove);
 
     const map = new maplibregl.Map({
       container: containerRef.current,
@@ -100,7 +111,46 @@ const MapView = forwardRef(function MapView({ onSelectionChange }, ref) {
       draw.start();
       draw.setMode("rectangle");
 
+      // Update area tooltip in real-time while the user drags.
+      draw.on("change", (ids, changeType) => {
+        const el = tooltipRef.current;
+        if (!el) return;
+
+        if (changeType === "delete") {
+          el.style.display = "none";
+          return;
+        }
+
+        const snapshot = draw.getSnapshot();
+        const feature = snapshot.find((f) => ids.includes(f.id));
+        if (!feature?.geometry?.coordinates?.[0]) {
+          el.style.display = "none";
+          return;
+        }
+
+        try {
+          const bbox = polygonToBbox(feature);
+          const area = computeAreaKm2(bbox);
+          if (area < 0.001) {
+            el.style.display = "none";
+            return;
+          }
+          el.textContent = `${area.toFixed(2)} km²`;
+          el.style.background =
+            area > MAX_AREA_KM2
+              ? "rgba(200, 50, 50, 0.9)"
+              : "rgba(15, 15, 15, 0.78)";
+          el.style.display = "block";
+        } catch {
+          el.style.display = "none";
+        }
+      });
+
       draw.on("finish", (id) => {
+        // Hide tooltip when drawing is done.
+        const el = tooltipRef.current;
+        if (el) el.style.display = "none";
+
         // Enforce a single rectangle: drop the previous one, if any.
         const previous = lastFeatureIdRef.current;
         if (previous && previous !== id) {
@@ -116,6 +166,7 @@ const MapView = forwardRef(function MapView({ onSelectionChange }, ref) {
     });
 
     return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
       drawRef.current?.stop();
       drawRef.current = null;
       mapRef.current?.remove();
@@ -123,7 +174,12 @@ const MapView = forwardRef(function MapView({ onSelectionChange }, ref) {
     };
   }, []);
 
-  return <div ref={containerRef} className={styles.map} />;
+  return (
+    <>
+      <div ref={containerRef} className={styles.map} />
+      <div ref={tooltipRef} className={styles.areaTooltip} style={{ display: "none" }} />
+    </>
+  );
 });
 
 export default MapView;

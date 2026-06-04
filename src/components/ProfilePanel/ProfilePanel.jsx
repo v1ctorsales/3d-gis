@@ -1,4 +1,5 @@
 import { useMemo, useRef } from "react";
+import { useLanguage } from "../../contexts/LanguageContext";
 import styles from "./ProfilePanel.module.css";
 
 const W = 320;
@@ -12,6 +13,7 @@ export default function ProfilePanel({
   onHoverIndex,
   hoveredIndex,
 }) {
+  const { t } = useLanguage();
   const svgRef = useRef(null);
 
   const layout = useMemo(() => {
@@ -84,11 +86,11 @@ export default function ProfilePanel({
   return (
     <div className={styles.panel}>
       <div className={styles.header}>
-        <span className={styles.title}>Measure tool</span>
-        <button type="button" onClick={onClose} aria-label="Close">×</button>
+        <span className={styles.title}>{t.measureTool}</span>
+        <button type="button" onClick={onClose} aria-label={t.close}>×</button>
       </div>
       <div className={styles.distance}>
-        Straight-line distance: <strong>{distanceLabel}</strong>
+        {t.straightLineDistance} <strong>{distanceLabel}</strong>
       </div>
       <svg
         ref={svgRef}

@@ -2,13 +2,15 @@ import { useRef, useState } from "react";
 import MapView from "./components/Map/MapView";
 import SelectionPanel from "./components/SelectionPanel/SelectionPanel";
 import Viewer3D from "./components/Viewer3D/Viewer3D";
+import { LanguageProvider, useLanguage } from "./contexts/LanguageContext";
 import "./App.css";
 
-function App() {
+function AppContent() {
   const [view, setView] = useState("select"); // 'select' | 'view3d'
   const [selection, setSelection] = useState(null);
   const [aoi, setAoi] = useState(null);
   const mapRef = useRef(null);
+  const { lang, setLang, t } = useLanguage();
 
   const handleClear = () => {
     mapRef.current?.clearSelection();
@@ -31,7 +33,44 @@ function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>GIS Explorer</h1>
+        <div className="app-header-left">
+          <h1>{t.appTitle}</h1>
+          <span className="app-byline">
+            {t.developedBy}{" "}
+            <a
+              href="https://www.victorsales.com.br"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="app-byline-name"
+            >
+              Victor Sales
+            </a>
+          </span>
+        </div>
+        <div className="app-header-right">
+          <button
+            type="button"
+            className={`lang-toggle${lang === "pt-BR" ? " lang-toggle--right" : ""}`}
+            onClick={() => setLang(lang === "en" ? "pt-BR" : "en")}
+            aria-label={
+              lang === "en" ? "Mudar para Português" : "Switch to English"
+            }
+          >
+            <span className="lang-toggle__thumb" />
+            <span
+              className={`lang-toggle__option${lang === "en" ? " lang-toggle__option--active" : ""}`}
+            >
+              <img src="public\gb.svg" alt="EN" width="20" height="14" />
+              EN-GB
+            </span>
+            <span
+              className={`lang-toggle__option${lang === "pt-BR" ? " lang-toggle__option--active" : ""}`}
+            >
+              <img src="public\br.svg" alt="EN" width="20" height="14" />
+              PT-BR
+            </span>
+          </button>
+        </div>
       </header>
       <main className="app-main">
         {view === "select" && (
@@ -49,6 +88,14 @@ function App() {
         )}
       </main>
     </div>
+  );
+}
+
+function App() {
+  return (
+    <LanguageProvider>
+      <AppContent />
+    </LanguageProvider>
   );
 }
 
