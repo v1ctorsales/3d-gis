@@ -30,7 +30,8 @@ export default function ProfilePanel({
     if (maxE - minE < 1) maxE = minE + 1;
 
     const xFor = (i) => PAD.left + (i / (samples.length - 1)) * innerW;
-    const yFor = (e) => PAD.top + innerH - ((e - minE) / (maxE - minE)) * innerH;
+    const yFor = (e) =>
+      PAD.top + innerH - ((e - minE) / (maxE - minE)) * innerH;
 
     return { innerW, innerH, minE, maxE, xFor, yFor };
   }, [samples]);
@@ -87,7 +88,9 @@ export default function ProfilePanel({
     <div className={styles.panel}>
       <div className={styles.header}>
         <span className={styles.title}>{t.measureTool}</span>
-        <button type="button" onClick={onClose} aria-label={t.close}>×</button>
+        <button type="button" onClick={onClose} aria-label={t.close}>
+          ×
+        </button>
       </div>
       <div className={styles.distance}>
         {t.straightLineDistance} <strong>{distanceLabel}</strong>
@@ -103,12 +106,32 @@ export default function ProfilePanel({
       >
         <path d={pathArea} className={styles.area} />
         <path d={pathLine} className={styles.line} />
-        <line x1={PAD.left} y1={PAD.top + innerH} x2={PAD.left + innerW} y2={PAD.top + innerH} className={styles.axis} />
-        <line x1={PAD.left} y1={PAD.top} x2={PAD.left} y2={PAD.top + innerH} className={styles.axis} />
-        <text x={PAD.left} y={PAD.top - 1} className={styles.tick}>{Math.round(maxE)} m</text>
-        <text x={PAD.left} y={PAD.top + innerH + 12} className={styles.tick}>{Math.round(minE)} m</text>
-        <text x={PAD.left} y={H - 4} className={styles.tick}>0</text>
-        <text x={PAD.left + innerW} y={H - 4} className={styles.tick} textAnchor="end">
+        <line
+          x1={PAD.left}
+          y1={PAD.top + innerH}
+          x2={PAD.left + innerW}
+          y2={PAD.top + innerH}
+          className={styles.axis}
+        />
+        <line
+          x1={PAD.left}
+          y1={PAD.top}
+          x2={PAD.left}
+          y2={PAD.top + innerH}
+          className={styles.axis}
+        />
+        <text x={PAD.left} y={PAD.top - 1} className={styles.tick}>
+          {Math.round(maxE)} m
+        </text>
+        <text x={PAD.left} y={PAD.top + innerH + 12} className={styles.tick}>
+          {Math.round(minE)} m
+        </text>
+        <text
+          x={PAD.left + innerW}
+          y={H - 4}
+          className={styles.tick}
+          textAnchor="end"
+        >
           {distanceLabel}
         </text>
         {hovered != null && (
@@ -120,14 +143,17 @@ export default function ProfilePanel({
               y2={PAD.top + innerH}
               className={styles.hoverLine}
             />
-            <circle cx={hoverX} cy={hoverY} r={3.5} className={styles.hoverDot} />
+            <circle
+              cx={hoverX}
+              cy={hoverY}
+              r={3.5}
+              className={styles.hoverDot}
+            />
             <text
               x={hoverX}
               y={PAD.top + 10}
               className={styles.hoverLabel}
-              textAnchor={
-                hoverX > PAD.left + innerW * 0.7 ? "end" : "start"
-              }
+              textAnchor={hoverX > PAD.left + innerW * 0.7 ? "end" : "start"}
               dx={hoverX > PAD.left + innerW * 0.7 ? -4 : 4}
             >
               {Math.round(hovered.elevation)} m
