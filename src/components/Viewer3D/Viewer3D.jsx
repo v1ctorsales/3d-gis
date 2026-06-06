@@ -49,6 +49,7 @@ const OSM_ATTRIBUTION = "© OpenStreetMap contributors";
 
 export default function Viewer3D({ bbox, onBack }) {
   const { t } = useLanguage();
+  const [panelOpen, setPanelOpen] = useState(false);
   // --- Terrain data (loaded once per bbox) ---
   const [terrain, setTerrain] = useState({ status: "loading" });
   const [trackedBbox, setTrackedBbox] = useState(bbox);
@@ -600,7 +601,29 @@ export default function Viewer3D({ bbox, onBack }) {
       </button>
 
       {terrain.status === "ready" && buildResult && (
-        <div className={styles.panel}>
+        <div className={`${styles.panel}${panelOpen ? ` ${styles.panelOpen}` : ""}`}>
+          <div
+            className={styles.panelHandle}
+            onClick={() => setPanelOpen((o) => !o)}
+            role="button"
+            aria-label={panelOpen ? "Recolher painel" : "Expandir painel"}
+          >
+            <div className={styles.panelHandlePill} />
+            <svg
+              className={`${styles.chevronIcon}${panelOpen ? ` ${styles.chevronFlipped}` : ""}`}
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </div>
           <div className={styles.panelScroll}>
             <fieldset className={styles.group}>
               <legend>{t.surface}</legend>

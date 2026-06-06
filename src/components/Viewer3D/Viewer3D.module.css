@@ -270,3 +270,65 @@
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+/* ── Mobile panel handle (hidden on desktop) ── */
+.panelHandle {
+  display: none;
+}
+
+.panelHandlePill {
+  width: 36px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.chevronIcon {
+  opacity: 0.45;
+  /* Default: points UP → hint to expand the sheet */
+  transform: rotate(180deg);
+  transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.chevronFlipped {
+  /* Points DOWN → hint to collapse the sheet */
+  transform: rotate(0deg);
+}
+
+/* ── Mobile: bottom sheet layout ── */
+@media (max-width: 640px) {
+  .panel {
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    max-height: 75vh;
+    border-radius: 14px 14px 0 0;
+    padding-top: 0;
+    /* Slide down so only the 44px handle is visible */
+    transform: translateY(calc(100% - 44px));
+    transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+
+  .panelOpen {
+    transform: translateY(0);
+  }
+
+  .panelHandle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 44px;
+    flex-shrink: 0;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .attribution {
+    right: 0.5rem;
+    bottom: 3rem;
+  }
+}
