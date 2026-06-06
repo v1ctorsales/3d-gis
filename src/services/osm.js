@@ -18,7 +18,7 @@ const DEV_MIRRORS = [
   "https://overpass.openstreetmap.fr/api/interpreter",
 ];
 
-const TIMEOUT_MS = 60000;
+const TIMEOUT_MS = 20000;
 
 function shortHost(url) {
   try {
@@ -33,17 +33,21 @@ function shortHost(url) {
  * Overpass{Http,Timeout}Error otherwise. The shared `winnerSignal` lets a
  * racing caller cancel losers as soon as one mirror has won.
  */
-async function fetchOne(url, query, label, winnerSignal) {
+async function fetchOne(
+  url,
+  query,
+  label,
+  winnerSignal,
+  timeoutMs = TIMEOUT_MS,
+) {
   const host = shortHost(url);
   const ctrl = new AbortController();
-  const onWin = winnerSignal
-    ? () => ctrl.abort()
-    : null;
+  const onWin = winnerSignal ? () => ctrl.abort() : null;
   if (winnerSignal && onWin) {
     if (winnerSignal.aborted) ctrl.abort();
     else winnerSignal.addEventListener("abort", onWin, { once: true });
   }
-  const timeoutHandle = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  const timeoutHandle = setTimeout(() => ctrl.abort(), timeoutMs);
   const startedAt = performance.now();
 
   try {
@@ -79,7 +83,9 @@ async function fetchOne(url, query, label, winnerSignal) {
     const text = await resp.text();
     const elapsed = Math.round(performance.now() - startedAt);
     const sizeKb = Math.round(text.length / 1024);
-    console.log(`${label} ${host} ✓ ${resp.status} · ${sizeKb} kB · ${elapsed}ms`);
+    console.log(
+      `${label} ${host} ✓ ${resp.status} · ${sizeKb} kB · ${elapsed}ms`,
+    );
     return JSON.parse(text);
   } catch (err) {
     const elapsed = Math.round(performance.now() - startedAt);
@@ -110,19 +116,19 @@ async function fetchOne(url, query, label, winnerSignal) {
  * is easy to follow in the console.
  */
 export async function overpassFetch(query, meta = {}) {
+  const timeoutMs = meta.timeoutMs ?? TIMEOUT_MS;
   const label = meta.label ? `[osm/${meta.label}]` : "[osm]";
 
-  if (ENV_OVERRIDE) return fetchOne(ENV_OVERRIDE, query, label, null);
-  if (IS_PROD) return fetchOne("/api/overpass", query, label, null);
+  if (ENV_OVERRIDE)
+    return fetchOne(ENV_OVERRIDE, query, label, null, timeoutMs);
+  if (IS_PROD) return fetchOne("/api/overpass", query, label, null, timeoutMs);
 
   // Dev: race all mirrors. Without this, one slow mirror = whole layer fails.
   const winnerCtrl = new AbortController();
   const overallStart = performance.now();
-  console.log(
-    `${label} racing ${DEV_MIRRORS.length} mirrors in parallel`,
-  );
+  console.log(`${label} racing ${DEV_MIRRORS.length} mirrors in parallel`);
   const attempts = DEV_MIRRORS.map((m) =>
-    fetchOne(m, query, label, winnerCtrl.signal),
+    fetchOne(m, query, label, winnerCtrl.signal, timeoutMs),
   );
   try {
     const data = await Promise.any(attempts);
@@ -248,7 +254,8 @@ export async function fetchBuildings(bbox) {
       if (el.type !== "way" || !el.tags?.building) continue;
       const coords = wayCoords(el, nodes);
       if (coords.length < 3) continue;
-      if (el.tags.height || el.tags["building:height"]) heightSources.explicit++;
+      if (el.tags.height || el.tags["building:height"])
+        heightSources.explicit++;
       else if (el.tags["building:levels"]) heightSources.levels++;
       else heightSources.default++;
       buildings.push({
@@ -290,30 +297,57 @@ const WATER_TIERS = [
   {
     name: "full",
     waterways: ["river", "stream", "canal"],
+    queryFn: buildWaterQueryFull,
+    timeoutOverride: 15000,
     description: "rivers, streams, canals, lakes, wetlands",
   },
   {
     name: "no-stream",
     waterways: ["river", "canal"],
-    description: "rivers, canals, lakes, wetlands (streams dropped — heavy AOI)",
+    queryFn: buildWaterQueryFull,
+    timeoutOverride: 20000,
+    description: "rivers, canals, lakes, wetlands (streams dropped)",
   },
   {
     name: "rivers-only",
     waterways: ["river"],
-    description: "rivers, lakes, wetlands (only major waterways)",
+    queryFn: buildWaterQueryWays,
+    timeoutOverride: 15000,
+    description: "rivers, lakes (ways only), wetlands",
   },
   {
     name: "polygons-only",
     waterways: [],
-    description: "lakes and wetlands only (no linestrings)",
+    queryFn: buildWaterQueryWays,
+    timeoutOverride: 15000,
+    description: "lakes and wetlands only (ways only)",
   },
 ];
 
-function buildWaterQuery(bbox, waterways) {
+function buildWaterQueryWays(bbox, waterways, timeoutS = 15) {
   const b = `${bbox.south},${bbox.west},${bbox.north},${bbox.east}`;
   const parts = [
     `way["natural"="water"](${b});`,
-    `relation["natural"="water"](${b});`,
+    `way["waterway"="riverbank"](${b});`,
+    `way["natural"="wetland"](${b});`,
+  ];
+  for (const ww of waterways) {
+    parts.push(`way["waterway"="${ww}"](${b});`);
+  }
+  return `
+    [out:json][timeout:${timeoutS}];
+    (
+${parts.map((p) => `      ${p}`).join("\n")}
+    );
+    out body; >; out skel qt;
+  `;
+}
+
+function buildWaterQueryFull(bbox, waterways, timeoutS = 20) {
+  const b = `${bbox.south},${bbox.west},${bbox.north},${bbox.east}`;
+  const parts = [
+    `way["natural"="water"](${b});`,
+    `relation["natural"="water"](${b});`, // ← lakes como relations
     `way["waterway"="riverbank"](${b});`,
     `relation["waterway"="riverbank"](${b});`,
     `way["natural"="wetland"](${b});`,
@@ -323,13 +357,11 @@ function buildWaterQuery(bbox, waterways) {
     parts.push(`way["waterway"="${ww}"](${b});`);
   }
   return `
-    [out:json][timeout:55];
+    [out:json][timeout:${timeoutS}];
     (
 ${parts.map((p) => `      ${p}`).join("\n")}
     );
-    out body;
-    >;
-    out skel qt;
+    out body; >; out skel qt;
   `;
 }
 
@@ -368,8 +400,14 @@ export async function fetchWater(bbox) {
         `[osm/water] tier ${i + 1}/${WATER_TIERS.length}: "${tier.name}" — ${tier.description}`,
       );
       try {
-        const query = buildWaterQuery(bbox, tier.waterways);
-        const data = await overpassFetch(query, { label: `water:${tier.name}` });
+        const timeoutS = Math.floor(
+          (tier.timeoutOverride ?? TIMEOUT_MS) / 1000,
+        );
+        const query = tier.queryFn(bbox, tier.waterways, timeoutS);
+        const data = await overpassFetch(query, {
+          label: `water:${tier.name}`,
+          timeoutMs: tier.timeoutOverride ?? TIMEOUT_MS,
+        });
         const summary = summarizeElements(data.elements || []);
         console.log(`[osm/water] response summary:`, summary);
 
@@ -393,7 +431,11 @@ export async function fetchWater(bbox) {
         console.log(
           `[osm/water] ✓ tier "${tier.name}" succeeded in ${totalMs}ms`,
         );
-        return { ...parsed, tier: tier.name, tierDescription: tier.description };
+        return {
+          ...parsed,
+          tier: tier.name,
+          tierDescription: tier.description,
+        };
       } catch (err) {
         const isLast = i === WATER_TIERS.length - 1;
         if (isRetryableOverpassError(err) && !isLast) {

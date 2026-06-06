@@ -16,7 +16,7 @@ const MIRRORS = [
 // Vercel edge functions get ~25 s. Race all mirrors in parallel and let
 // the fastest healthy one win; if every mirror exceeds this timeout we
 // abort cleanly with a 504 instead of having Vercel kill the function.
-const TIMEOUT_PER_MIRROR = 18000;
+const TIMEOUT_PER_MIRROR = 22000;
 
 // Overpass mirrors rate-limit / reject requests without a meaningful
 // User-Agent string. Vercel edge functions don't send one by default,
