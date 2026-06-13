@@ -202,6 +202,26 @@ function scaleElevations(elevations, zFactor) {
 }
 
 /**
+ * Estimate the expected visual richness of the 3D terrain from the loaded
+ * DEM's elevation range and relief density (range / sqrt(pixel count)).
+ *
+ * @param {{minElevation: number, maxElevation: number, width: number, height: number}} heightmap
+ * @returns {{key: "excellent"|"good"|"moderate"|"low", color: string}}
+ */
+export function assessTerrainQuality(heightmap) {
+  const range = heightmap.maxElevation - heightmap.minElevation;
+  const totalPixels = heightmap.width * heightmap.height;
+  const reliefDensity = range / Math.sqrt(totalPixels);
+
+  if (range > 1500 || reliefDensity > 3)
+    return { key: "excellent", color: "#4ADE80" };
+  if (range > 500 || reliefDensity > 1)
+    return { key: "good", color: "#86EFAC" };
+  if (range > 100) return { key: "moderate", color: "#FCD34D" };
+  return { key: "low", color: "#F87171" };
+}
+
+/**
  * Pick a hillshade z-factor that yields visible shading even on flat terrain.
  * Targets having ~10% of pixels reach slope ≥ 30° after the z-factor is applied,
  * which gives the directional term a meaningful contribution.

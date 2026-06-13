@@ -19,7 +19,10 @@ import {
   buildAspectCanvas,
   buildHillshadeCanvas,
 } from "./surfaceTextures";
-import { suggestHillshadeZFactor } from "./terrainAnalysis";
+import {
+  suggestHillshadeZFactor,
+  assessTerrainQuality,
+} from "./terrainAnalysis";
 import { buildBuildingsGeometry } from "./buildBuildingsGeometry";
 import {
   buildInlandWaterGeometry,
@@ -47,9 +50,49 @@ import { useLanguage } from "../../contexts/LanguageContext";
 
 const OSM_ATTRIBUTION = "© OpenStreetMap contributors";
 
+function InfoTooltip({ text }) {
+  const [pos, setPos] = useState(null);
+  const iconRef = useRef(null);
+
+  const show = () => {
+    const rect = iconRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setPos({
+      top: rect.top - 8,
+      right: window.innerWidth - rect.right + rect.width,
+    });
+  };
+
+  return (
+    <span
+      ref={iconRef}
+      className={styles.infoIcon}
+      onMouseEnter={show}
+      onMouseLeave={() => setPos(null)}
+    >
+      ⓘ
+      {pos && (
+        <span
+          className={styles.tooltip}
+          style={{
+            position: "fixed",
+            top: pos.top,
+            right: pos.right,
+            transform: "translateY(-100%)",
+          }}
+        >
+          {text}
+        </span>
+      )}
+    </span>
+  );
+}
+
 export default function Viewer3D({ bbox, onBack }) {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const [panelOpen, setPanelOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [analysisOpen, setAnalysisOpen] = useState(true);
   // --- Terrain data (loaded once per bbox) ---
   const [terrain, setTerrain] = useState({ status: "loading" });
   const [trackedBbox, setTrackedBbox] = useState(bbox);
@@ -176,6 +219,52 @@ export default function Viewer3D({ bbox, onBack }) {
         : null,
     [terrain, bbox],
   );
+  const terrainQuality = useMemo(
+    () =>
+      terrain.status === "ready"
+        ? assessTerrainQuality(terrain.heightmap)
+        : null,
+    [terrain],
+  );
+
+  // --- Reverse-geocode the bbox centre for a human-readable region label ---
+  const centerLat = (bbox.south + bbox.north) / 2;
+  const centerLon = (bbox.west + bbox.east) / 2;
+  const [region, setRegion] = useState({ status: "idle" });
+  const regionCacheRef = useRef({});
+
+  useEffect(() => {
+    if (terrain.status !== "ready") return;
+
+    const key = `${centerLat.toFixed(3)},${centerLon.toFixed(3)},${lang}`;
+    const cached = regionCacheRef.current[key];
+    if (cached) {
+      setRegion({ status: "ready", data: cached });
+      return;
+    }
+
+    let cancelled = false;
+    setRegion({ status: "loading" });
+
+    fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${centerLat}&lon=${centerLon}&format=json&accept-language=${lang}`,
+      { headers: { "User-Agent": "gis-3d-webapp" } },
+    )
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled) return;
+        regionCacheRef.current[key] = data;
+        setRegion({ status: "ready", data });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setRegion({ status: "error" });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [terrain.status, centerLat, centerLon, lang]);
 
   // --- Lazy OSM loading ---
   const [buildings, setBuildings] = useState({ status: "idle" });
@@ -490,13 +579,25 @@ export default function Viewer3D({ bbox, onBack }) {
     samplesToScenePoints,
   ]);
 
+  const regionAddress = region.status === "ready" ? region.data?.address : null;
+  const regionPlace = regionAddress
+    ? (regionAddress.city ??
+      regionAddress.town ??
+      regionAddress.village ??
+      regionAddress.county ??
+      regionAddress.state)
+    : null;
+  const regionCountry = regionAddress?.country;
+
   return (
     <div className={styles.viewer}>
       {terrain.status === "loading" && (
         <div className={styles.statusOverlay}>{t.loadingTerrain}</div>
       )}
       {terrain.status === "error" && (
-        <div className={styles.statusOverlay}>{t.errorPrefix} {terrain.error}</div>
+        <div className={styles.statusOverlay}>
+          {t.errorPrefix} {terrain.error}
+        </div>
       )}
 
       {buildResult && (
@@ -601,7 +702,9 @@ export default function Viewer3D({ bbox, onBack }) {
       </button>
 
       {terrain.status === "ready" && buildResult && (
-        <div className={`${styles.panel}${panelOpen ? ` ${styles.panelOpen}` : ""}`}>
+        <div
+          className={`${styles.panel}${panelOpen ? ` ${styles.panelOpen}` : ""}`}
+        >
           <div
             className={styles.panelHandle}
             onClick={() => setPanelOpen((o) => !o)}
@@ -625,390 +728,528 @@ export default function Viewer3D({ bbox, onBack }) {
             </svg>
           </div>
           <div className={styles.panelScroll}>
-            <fieldset className={styles.group}>
-              <legend>{t.surface}</legend>
-              <label className={styles.radio}>
-                <input
-                  type="radio"
-                  name="surface"
-                  checked={surface === "imagery"}
-                  onChange={() => setSurface("imagery")}
-                />
-                {t.satelliteImagery}
-              </label>
-              <label className={styles.radio}>
-                <input
-                  type="radio"
-                  name="surface"
-                  checked={surface === "hypsometric"}
-                  onChange={() => setSurface("hypsometric")}
-                />
-                {t.hypsometricTint}
-              </label>
-              <label className={styles.radio}>
-                <input
-                  type="radio"
-                  name="surface"
-                  checked={surface === "hillshade"}
-                  onChange={() => setSurface("hillshade")}
-                />
-                {t.hillshade}
-              </label>
-              <label className={styles.radio}>
-                <input
-                  type="radio"
-                  name="surface"
-                  checked={surface === "slope"}
-                  onChange={() => setSurface("slope")}
-                />
-                {t.slope}
-              </label>
-              <label className={styles.radio}>
-                <input
-                  type="radio"
-                  name="surface"
-                  checked={surface === "aspect"}
-                  onChange={() => setSurface("aspect")}
-                />
-                {t.aspect}
-              </label>
-              {surface === "hillshade" && (
-                <label className={styles.slider}>
-                  <span>{t.zFactor}</span>
-                  <span className={styles.value}>
-                    {hillshadeZ.toFixed(1)}×
-                    {hillshadeZAuto != null && (
-                      <span className={styles.muted}>
-                        {" "}
-                        ({t.auto} {hillshadeZAuto.toFixed(1)}×)
-                      </span>
-                    )}
-                  </span>
-                  <input
-                    type="range"
-                    min={1}
-                    max={20}
-                    step={0.5}
-                    value={hillshadeZ}
-                    onChange={(e) => setHillshadeZ(parseFloat(e.target.value))}
-                  />
-                </label>
-              )}
-              {surface === "hypsometric" && (
-                <label className={styles.slider}>
-                  <span>{t.bandWidth}</span>
-                  <span className={styles.value}>
-                    {hypsoBandM} m
-                    {hypsoBandAuto != null && (
-                      <span className={styles.muted}>
-                        {" "}
-                        ({t.auto} {Math.round(hypsoBandAuto)})
-                      </span>
-                    )}
-                  </span>
-                  <input
-                    type="range"
-                    min={1}
-                    max={500}
-                    step={1}
-                    value={hypsoBandM}
-                    onChange={(e) =>
-                      setHypsoBandM(parseInt(e.target.value, 10))
-                    }
-                  />
-                </label>
-              )}
-            </fieldset>
-
-            <fieldset className={styles.group}>
-              <legend>{t.overlays}</legend>
-              <label className={styles.check}>
-                <input
-                  type="checkbox"
-                  checked={showBuildings}
-                  onChange={(e) => setShowBuildings(e.target.checked)}
-                />
-                {t.buildings}
-                {buildings.status === "loading" && (
-                  <span className={styles.muted}> {t.loading}</span>
-                )}
-                {buildings.status === "error" && (
-                  <span className={styles.error}> {t.failed}</span>
-                )}
-              </label>
-              <div className={styles.checkRow}>
-                <label className={styles.check}>
-                  <input
-                    type="checkbox"
-                    checked={showWater}
-                    onChange={(e) => setShowWater(e.target.checked)}
-                  />
-                  {t.water}
-                  {water.status === "loading" && (
-                    <span className={styles.muted}> {t.loading}</span>
-                  )}
-                  {water.status === "error" && (
-                    <span className={styles.error}> {t.failed}</span>
-                  )}
-                  {water.status === "ready" &&
-                    water.data.tier &&
-                    water.data.tier !== "full" && (
-                      <span
-                        className={styles.muted}
-                        title={water.data.tierDescription}
-                      >
-                        {" "}
-                        ({t.reducedPrefix} {water.data.tier})
-                      </span>
-                    )}
-                </label>
-                <button
-                  type="button"
-                  className={`${styles.gearButton} ${
-                    waterSettingsOpen ? styles.gearActive : ""
-                  }`}
-                  onClick={() => setWaterSettingsOpen(!waterSettingsOpen)}
-                  disabled={!showWater}
-                  aria-label={t.waterSettings}
-                  title={t.waterSettings}
+            <div className={styles.section}>
+              <button
+                type="button"
+                className={styles.sectionHeader}
+                onClick={() => setInfoOpen((o) => !o)}
+                aria-expanded={infoOpen}
+              >
+                <span>{t.infoSection}</span>
+                <svg
+                  className={`${styles.sectionChevron}${infoOpen ? ` ${styles.sectionChevronOpen}` : ""}`}
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
                 >
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <circle cx="12" cy="12" r="3" />
-                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                  </svg>
-                </button>
-              </div>
-              <label className={styles.check}>
-                <input
-                  type="checkbox"
-                  checked={showRoads}
-                  onChange={(e) => setShowRoads(e.target.checked)}
-                />
-                {t.roads}
-                {roads.status === "loading" && (
-                  <span className={styles.muted}> {t.loading}</span>
-                )}
-                {roads.status === "error" && (
-                  <span className={styles.error}> {t.failed}</span>
-                )}
-              </label>
-              {showWater && waterSettingsOpen && (
-                <div className={styles.subPanel}>
-                  <label className={styles.slider}>
-                    <span>{t.yOffset}</span>
-                    <span className={styles.value}>
-                      {waterOffset >= 0 ? "+" : ""}
-                      {waterOffset.toFixed(1)} m
-                    </span>
-                    <input
-                      type="range"
-                      min={-50}
-                      max={50}
-                      step={0.5}
-                      value={waterOffset}
-                      onChange={(e) =>
-                        setWaterOffset(parseFloat(e.target.value))
-                      }
-                    />
-                  </label>
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </button>
+              <div
+                className={`${styles.sectionBody}${
+                  infoOpen ? ` ${styles.sectionBodyOpen}` : ""
+                }`}
+              >
+                <div className={styles.infoGrid}>
+                  <span>{t.infoRegion}</span>
+                  <span className={styles.infoValue}>
+                    {region.status === "loading" && (
+                      <span className={styles.muted}>{t.infoLoading}</span>
+                    )}
+                    {region.status === "ready" && regionPlace && (
+                      <>
+                        {regionPlace}
+                        {regionCountry && (
+                          <>
+                            <br />
+                            {regionCountry}
+                          </>
+                        )}
+                      </>
+                    )}
+                  </span>
+
+                  <span>{t.infoCenter}</span>
+                  <span className={styles.infoValue}>
+                    {Math.abs(centerLat).toFixed(5)}°{" "}
+                    {centerLat >= 0 ? "N" : "S"}
+                    {"  "}
+                    {Math.abs(centerLon).toFixed(5)}°{" "}
+                    {centerLon >= 0 ? "E" : "W"}
+                  </span>
+
+                  <span>{t.infoBounds}</span>
+                  <span className={styles.infoValue}>
+                    W {bbox.west.toFixed(2)}° E {bbox.east.toFixed(2)}° S{" "}
+                    {bbox.south.toFixed(2)}° N {bbox.north.toFixed(2)}°
+                  </span>
+
+                  <span>{t.areaLabel}</span>
+                  <span className={styles.infoValue}>
+                    {(
+                      (buildResult.scale.widthM * buildResult.scale.depthM) /
+                      1_000_000
+                    ).toFixed(1)}{" "}
+                    km²
+                  </span>
+
+                  <span>{t.elevationLabel}</span>
+                  <span className={styles.infoValue}>
+                    {Math.round(terrain.heightmap.minElevation)}–
+                    {Math.round(terrain.heightmap.maxElevation)} m
+                  </span>
+
+                  {pixelSizeM != null && (
+                    <>
+                      <span>{t.infoDEMRes}</span>
+                      <span className={styles.infoValue}>
+                        ~{Math.round(pixelSizeM)}m / px
+                      </span>
+                    </>
+                  )}
+
+                  {terrainQuality && (
+                    <>
+                      <span>{t.terrainQualityLabel}</span>
+                      <span className={styles.infoValue}>
+                        <span style={{ color: terrainQuality.color }}>
+                          {
+                            {
+                              excellent: t.qualityExcellent,
+                              good: t.qualityGood,
+                              moderate: t.qualityModerate,
+                              low: t.qualityLow,
+                            }[terrainQuality.key]
+                          }
+                        </span>{" "}
+                        <InfoTooltip text={t.terrainQualityInfo} />
+                      </span>
+                    </>
+                  )}
                 </div>
-              )}
-            </fieldset>
-
-            <fieldset className={styles.group}>
-              <legend>{t.terrain}</legend>
-              <label className={styles.slider}>
-                <span>{t.verticalExaggeration}</span>
-                <span className={styles.value}>{exaggeration.toFixed(1)}×</span>
-                <input
-                  type="range"
-                  min={1}
-                  max={8}
-                  step={0.5}
-                  value={exaggeration}
-                  onChange={(e) => setExaggeration(parseFloat(e.target.value))}
-                />
-              </label>
-              <div className={styles.checkRow}>
-                <label className={styles.check}>
-                  <input
-                    type="checkbox"
-                    checked={showContours}
-                    onChange={(e) => setShowContours(e.target.checked)}
-                  />
-                  {t.contourLines}
-                </label>
-                <button
-                  type="button"
-                  className={`${styles.gearButton} ${
-                    contourSettingsOpen ? styles.gearActive : ""
-                  }`}
-                  onClick={() => setContourSettingsOpen(!contourSettingsOpen)}
-                  disabled={!showContours}
-                  aria-label={t.contourSettings}
-                  title={t.contourSettings}
-                >
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <circle cx="12" cy="12" r="3" />
-                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                  </svg>
-                </button>
               </div>
-              {showContours && (
-                <label className={styles.slider}>
-                  <span>{t.contourSpacing}</span>
-                  <span className={styles.value}>{contourSpacing} m</span>
-                  <input
-                    type="range"
-                    min={5}
-                    max={200}
-                    step={5}
-                    value={contourSpacing}
-                    onChange={(e) =>
-                      setContourSpacing(parseInt(e.target.value, 10))
-                    }
-                  />
-                </label>
-              )}
-              {showContours && contourSettingsOpen && (
-                <div className={styles.subPanel}>
-                  <label className={styles.slider}>
-                    <span>{t.color}</span>
+            </div>
+
+            <div className={styles.section}>
+              <button
+                type="button"
+                className={styles.sectionHeader}
+                onClick={() => setAnalysisOpen((o) => !o)}
+                aria-expanded={analysisOpen}
+              >
+                <span>{t.analysisSection}</span>
+                <svg
+                  className={`${styles.sectionChevron}${analysisOpen ? ` ${styles.sectionChevronOpen}` : ""}`}
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </button>
+              <div
+                className={`${styles.sectionBody}${
+                  analysisOpen ? ` ${styles.sectionBodyOpen}` : ""
+                }`}
+              >
+                <fieldset className={styles.group}>
+                  <legend>{t.surface}</legend>
+                  <label className={styles.radio}>
                     <input
-                      type="color"
-                      value={contourColor}
-                      onChange={(e) => setContourColor(e.target.value)}
+                      type="radio"
+                      name="surface"
+                      checked={surface === "imagery"}
+                      onChange={() => setSurface("imagery")}
                     />
+                    {t.satelliteImagery}
                   </label>
+                  <label className={styles.radio}>
+                    <input
+                      type="radio"
+                      name="surface"
+                      checked={surface === "hypsometric"}
+                      onChange={() => setSurface("hypsometric")}
+                    />
+                    {t.hypsometricTint}
+                  </label>
+                  <label className={styles.radio}>
+                    <input
+                      type="radio"
+                      name="surface"
+                      checked={surface === "hillshade"}
+                      onChange={() => setSurface("hillshade")}
+                    />
+                    {t.hillshade}
+                  </label>
+                  <label className={styles.radio}>
+                    <input
+                      type="radio"
+                      name="surface"
+                      checked={surface === "slope"}
+                      onChange={() => setSurface("slope")}
+                    />
+                    {t.slope}
+                  </label>
+                  <label className={styles.radio}>
+                    <input
+                      type="radio"
+                      name="surface"
+                      checked={surface === "aspect"}
+                      onChange={() => setSurface("aspect")}
+                    />
+                    {t.aspect}
+                  </label>
+                  {surface === "hillshade" && (
+                    <label className={styles.slider}>
+                      <span>{t.zFactor}</span>
+                      <span className={styles.value}>
+                        {hillshadeZ.toFixed(1)}×
+                        {hillshadeZAuto != null && (
+                          <span className={styles.muted}>
+                            {" "}
+                            ({t.auto} {hillshadeZAuto.toFixed(1)}×)
+                          </span>
+                        )}
+                      </span>
+                      <input
+                        type="range"
+                        min={1}
+                        max={20}
+                        step={0.5}
+                        value={hillshadeZ}
+                        onChange={(e) =>
+                          setHillshadeZ(parseFloat(e.target.value))
+                        }
+                      />
+                    </label>
+                  )}
+                  {surface === "hypsometric" && (
+                    <label className={styles.slider}>
+                      <span>{t.bandWidth}</span>
+                      <span className={styles.value}>
+                        {hypsoBandM} m
+                        {hypsoBandAuto != null && (
+                          <span className={styles.muted}>
+                            {" "}
+                            ({t.auto} {Math.round(hypsoBandAuto)})
+                          </span>
+                        )}
+                      </span>
+                      <input
+                        type="range"
+                        min={1}
+                        max={500}
+                        step={1}
+                        value={hypsoBandM}
+                        onChange={(e) =>
+                          setHypsoBandM(parseInt(e.target.value, 10))
+                        }
+                      />
+                    </label>
+                  )}
+                </fieldset>
+
+                <fieldset className={styles.group}>
+                  <legend>{t.overlays}</legend>
+                  <label className={styles.check}>
+                    <input
+                      type="checkbox"
+                      checked={showBuildings}
+                      onChange={(e) => setShowBuildings(e.target.checked)}
+                    />
+                    {t.buildings}
+                    {buildings.status === "loading" && (
+                      <span className={styles.muted}> {t.loading}</span>
+                    )}
+                    {buildings.status === "error" && (
+                      <span className={styles.error}> {t.failed}</span>
+                    )}
+                  </label>
+                  <div className={styles.checkRow}>
+                    <label className={styles.check}>
+                      <input
+                        type="checkbox"
+                        checked={showWater}
+                        onChange={(e) => setShowWater(e.target.checked)}
+                      />
+                      {t.water}
+                      {water.status === "loading" && (
+                        <span className={styles.muted}> {t.loading}</span>
+                      )}
+                      {water.status === "error" && (
+                        <span className={styles.error}> {t.failed}</span>
+                      )}
+                      {water.status === "ready" &&
+                        water.data.tier &&
+                        water.data.tier !== "full" && (
+                          <span
+                            className={styles.muted}
+                            title={water.data.tierDescription}
+                          >
+                            {" "}
+                            ({t.reducedPrefix} {water.data.tier})
+                          </span>
+                        )}
+                    </label>
+                    <button
+                      type="button"
+                      className={`${styles.gearButton} ${
+                        waterSettingsOpen ? styles.gearActive : ""
+                      }`}
+                      onClick={() => setWaterSettingsOpen(!waterSettingsOpen)}
+                      disabled={!showWater}
+                      aria-label={t.waterSettings}
+                      title={t.waterSettings}
+                    >
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <circle cx="12" cy="12" r="3" />
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                      </svg>
+                    </button>
+                  </div>
+                  <label className={styles.check}>
+                    <input
+                      type="checkbox"
+                      checked={showRoads}
+                      onChange={(e) => setShowRoads(e.target.checked)}
+                    />
+                    {t.roads}
+                    {roads.status === "loading" && (
+                      <span className={styles.muted}> {t.loading}</span>
+                    )}
+                    {roads.status === "error" && (
+                      <span className={styles.error}> {t.failed}</span>
+                    )}
+                  </label>
+                  {showWater && waterSettingsOpen && (
+                    <div className={styles.subPanel}>
+                      <label className={styles.slider}>
+                        <span>{t.yOffset}</span>
+                        <span className={styles.value}>
+                          {waterOffset >= 0 ? "+" : ""}
+                          {waterOffset.toFixed(1)} m
+                        </span>
+                        <input
+                          type="range"
+                          min={-50}
+                          max={50}
+                          step={0.5}
+                          value={waterOffset}
+                          onChange={(e) =>
+                            setWaterOffset(parseFloat(e.target.value))
+                          }
+                        />
+                      </label>
+                    </div>
+                  )}
+                </fieldset>
+
+                <fieldset className={styles.group}>
+                  <legend>{t.terrain}</legend>
                   <label className={styles.slider}>
-                    <span>{t.lineWidth}</span>
+                    <span>{t.verticalExaggeration}</span>
                     <span className={styles.value}>
-                      {contourWidth.toFixed(1)} px
+                      {exaggeration.toFixed(1)}×
                     </span>
                     <input
                       type="range"
                       min={1}
-                      max={6}
+                      max={8}
                       step={0.5}
-                      value={contourWidth}
+                      value={exaggeration}
                       onChange={(e) =>
-                        setContourWidth(parseFloat(e.target.value))
+                        setExaggeration(parseFloat(e.target.value))
                       }
                     />
                   </label>
-                  <label className={styles.slider}>
-                    <span>{t.opacity}</span>
-                    <span className={styles.value}>
-                      {contourOpacity.toFixed(2)}
-                    </span>
-                    <input
-                      type="range"
-                      min={0.2}
-                      max={1}
-                      step={0.05}
-                      value={contourOpacity}
-                      onChange={(e) =>
-                        setContourOpacity(parseFloat(e.target.value))
+                  <div className={styles.checkRow}>
+                    <label className={styles.check}>
+                      <input
+                        type="checkbox"
+                        checked={showContours}
+                        onChange={(e) => setShowContours(e.target.checked)}
+                      />
+                      {t.contourLines}
+                    </label>
+                    <button
+                      type="button"
+                      className={`${styles.gearButton} ${
+                        contourSettingsOpen ? styles.gearActive : ""
+                      }`}
+                      onClick={() =>
+                        setContourSettingsOpen(!contourSettingsOpen)
                       }
-                    />
-                  </label>
-                </div>
-              )}
-            </fieldset>
-
-            <fieldset className={styles.group}>
-              <legend>{t.floodStatic}</legend>
-              <label className={styles.check}>
-                <input
-                  type="checkbox"
-                  checked={showFlood}
-                  onChange={(e) => setShowFlood(e.target.checked)}
-                />
-                {t.showFloodPlane}
-              </label>
-              {showFlood && (
-                <>
-                  <label className={styles.slider}>
-                    <span>{t.waterLevel}</span>
-                    <span className={styles.value}>{floodLevel} m</span>
-                    <input
-                      type="range"
-                      min={Math.floor(terrain.heightmap.minElevation)}
-                      max={Math.ceil(terrain.heightmap.maxElevation)}
-                      step={1}
-                      value={floodLevel}
-                      onChange={(e) =>
-                        setFloodLevel(parseInt(e.target.value, 10))
-                      }
-                    />
-                  </label>
-                  {flood && (
-                    <div className={styles.stats}>
-                      {(flood.floodedFraction * 100).toFixed(1)}{t.inundatedSuffix}{" "}
-                      {(flood.floodedAreaM2 / 1_000_000).toFixed(2)} km²
+                      disabled={!showContours}
+                      aria-label={t.contourSettings}
+                      title={t.contourSettings}
+                    >
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <circle cx="12" cy="12" r="3" />
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                      </svg>
+                    </button>
+                  </div>
+                  {showContours && (
+                    <label className={styles.slider}>
+                      <span>{t.contourSpacing}</span>
+                      <span className={styles.value}>{contourSpacing} m</span>
+                      <input
+                        type="range"
+                        min={5}
+                        max={200}
+                        step={5}
+                        value={contourSpacing}
+                        onChange={(e) =>
+                          setContourSpacing(parseInt(e.target.value, 10))
+                        }
+                      />
+                    </label>
+                  )}
+                  {showContours && contourSettingsOpen && (
+                    <div className={styles.subPanel}>
+                      <label className={styles.slider}>
+                        <span>{t.color}</span>
+                        <input
+                          type="color"
+                          value={contourColor}
+                          onChange={(e) => setContourColor(e.target.value)}
+                        />
+                      </label>
+                      <label className={styles.slider}>
+                        <span>{t.lineWidth}</span>
+                        <span className={styles.value}>
+                          {contourWidth.toFixed(1)} px
+                        </span>
+                        <input
+                          type="range"
+                          min={1}
+                          max={6}
+                          step={0.5}
+                          value={contourWidth}
+                          onChange={(e) =>
+                            setContourWidth(parseFloat(e.target.value))
+                          }
+                        />
+                      </label>
+                      <label className={styles.slider}>
+                        <span>{t.opacity}</span>
+                        <span className={styles.value}>
+                          {contourOpacity.toFixed(2)}
+                        </span>
+                        <input
+                          type="range"
+                          min={0.2}
+                          max={1}
+                          step={0.05}
+                          value={contourOpacity}
+                          onChange={(e) =>
+                            setContourOpacity(parseFloat(e.target.value))
+                          }
+                        />
+                      </label>
                     </div>
                   )}
-                </>
-              )}
-            </fieldset>
+                </fieldset>
 
-            <fieldset className={styles.group}>
-              <legend>{t.tools}</legend>
-              <label className={styles.check}>
-                <input
-                  type="checkbox"
-                  checked={profileTool}
-                  onChange={(e) => {
-                    setProfileTool(e.target.checked);
-                    if (!e.target.checked) {
-                      setProfilePoints([]);
-                      setPreviewPoint(null);
-                      setHoveredProfileIndex(null);
-                    }
-                  }}
-                />
-                {t.measureTool}
-              </label>
-              {profileTool && (
-                <div className={styles.muted}>
-                  {profilePoints.length === 0 && t.clickToSetStart}
-                  {profilePoints.length === 1 && t.clickToSetEnd}
-                  {profilePoints.length === 2 && t.clickToReset}
-                </div>
-              )}
-              {profileTool && previewProfile && (
-                <div className={styles.stats}>
-                  {t.distanceLabel} {(previewProfile.distanceM / 1000).toFixed(2)} km
-                </div>
-              )}
-            </fieldset>
+                <fieldset className={styles.group}>
+                  <legend>{t.floodStatic}</legend>
+                  <label className={styles.check}>
+                    <input
+                      type="checkbox"
+                      checked={showFlood}
+                      onChange={(e) => setShowFlood(e.target.checked)}
+                    />
+                    {t.showFloodPlane}
+                  </label>
+                  {showFlood && (
+                    <>
+                      <label className={styles.slider}>
+                        <span>{t.waterLevel}</span>
+                        <span className={styles.value}>{floodLevel} m</span>
+                        <input
+                          type="range"
+                          min={Math.floor(terrain.heightmap.minElevation)}
+                          max={Math.ceil(terrain.heightmap.maxElevation)}
+                          step={1}
+                          value={floodLevel}
+                          onChange={(e) =>
+                            setFloodLevel(parseInt(e.target.value, 10))
+                          }
+                        />
+                      </label>
+                      {flood && (
+                        <div className={styles.stats}>
+                          {(flood.floodedFraction * 100).toFixed(1)}
+                          {t.inundatedSuffix}{" "}
+                          {(flood.floodedAreaM2 / 1_000_000).toFixed(2)} km²
+                        </div>
+                      )}
+                    </>
+                  )}
+                </fieldset>
 
-            <div className={styles.stats}>
-              {t.areaLabel}{" "}
-              {(
-                (buildResult.scale.widthM * buildResult.scale.depthM) /
-                1_000_000
-              ).toFixed(1)}{" "}
-              km² · {t.elevationLabel} {Math.round(terrain.heightmap.minElevation)}–
-              {Math.round(terrain.heightmap.maxElevation)} m
+                <fieldset className={styles.group}>
+                  <legend>{t.tools}</legend>
+                  <label className={styles.check}>
+                    <input
+                      type="checkbox"
+                      checked={profileTool}
+                      onChange={(e) => {
+                        setProfileTool(e.target.checked);
+                        if (!e.target.checked) {
+                          setProfilePoints([]);
+                          setPreviewPoint(null);
+                          setHoveredProfileIndex(null);
+                        }
+                      }}
+                    />
+                    {t.measureTool}
+                  </label>
+                  {profileTool && (
+                    <div className={styles.muted}>
+                      {profilePoints.length === 0 && t.clickToSetStart}
+                      {profilePoints.length === 1 && t.clickToSetEnd}
+                      {profilePoints.length === 2 && t.clickToReset}
+                    </div>
+                  )}
+                  {profileTool && previewProfile && (
+                    <div className={styles.stats}>
+                      {t.distanceLabel}{" "}
+                      {(previewProfile.distanceM / 1000).toFixed(2)} km
+                    </div>
+                  )}
+                </fieldset>
+              </div>
             </div>
           </div>
 

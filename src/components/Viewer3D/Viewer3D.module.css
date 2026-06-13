@@ -39,12 +39,12 @@
 .panel {
   display: flex;
   flex-direction: column;
-  max-height: calc(100vh - 32px);
+  max-height: calc(100vh - 12%);
   position: absolute;
   top: 1rem;
   right: 1rem;
   z-index: 2;
-  padding: 0.5rem 0.85rem 0.85rem;
+  padding: 0.5rem 0 0.85rem 0.85rem;
   background: rgba(20, 20, 20, 0.85);
   color: #fff;
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -59,12 +59,16 @@
   overflow-x: hidden;
   flex: 1;
   min-height: 0;
+  scrollbar-gutter: stable;
+  padding-right: 4px;
 }
 
 .panelFooter {
   flex-shrink: 0;
   border-top: 1px solid #333;
   padding-top: 8px;
+  padding-bottom: 8px;
+  margin-top: 4px;
 }
 
 .group {
@@ -172,6 +176,112 @@
   opacity: 0.7;
   font-size: 0.75rem;
   line-height: 1.4;
+}
+
+.section {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  margin-bottom: 0.4rem;
+  padding-bottom: 0.2rem;
+}
+
+.section:last-child {
+  border-bottom: none;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 5px;
+  color: #fff;
+  padding: 0.4rem 0.6rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.85;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.sectionHeader:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.sectionChevron {
+  flex-shrink: 0;
+  opacity: 0.6;
+  transform: rotate(-90deg);
+  transition: transform 0.2s ease;
+}
+
+.sectionChevronOpen {
+  transform: rotate(0deg);
+}
+
+.sectionBody {
+  overflow: hidden;
+  max-height: 0;
+  transition: max-height 0.25s ease;
+}
+
+.sectionBodyOpen {
+  max-height: 2000px;
+}
+
+.infoGrid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.3rem 0.6rem;
+  align-items: start;
+  padding: 0.1rem 0 0.5rem;
+  font-size: 0.8rem;
+  overflow: visible;
+}
+
+.infoGrid > span:nth-child(odd) {
+  opacity: 0.6;
+  font-size: 0.75rem;
+}
+
+.infoValue {
+  font-family: "Menlo", "Consolas", monospace;
+  text-align: right;
+  font-size: 0.78rem;
+  max-width: 11rem;
+  word-break: break-word;
+}
+
+.tooltip {
+  width: 200px;
+  padding: 0.5rem 0.6rem;
+  border-radius: 4px;
+  background: rgba(20, 20, 20, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #eee;
+  font-size: 0.7rem;
+  line-height: 1.4;
+  pointer-events: none;
+  white-space: normal;
+  word-break: break-word;
+  z-index: 9999;
+}
+
+.infoIcon {
+  cursor: help;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.infoIcon:hover .tooltip {
+  display: block;
 }
 
 .attribution {
