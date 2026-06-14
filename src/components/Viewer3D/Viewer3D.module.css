@@ -44,7 +44,7 @@
   top: 1rem;
   right: 1rem;
   z-index: 2;
-  padding: 0.5rem 0 0.85rem 0.85rem;
+  padding: 0;
   background: rgba(20, 20, 20, 0.85);
   color: #fff;
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -52,22 +52,19 @@
   width: 18rem;
   backdrop-filter: blur(8px);
   font-size: 0.85rem;
+  overflow: hidden;
 }
-
 .panelScroll {
   overflow-y: auto;
   overflow-x: hidden;
   flex: 1;
   min-height: 0;
-  scrollbar-gutter: stable;
-  padding-right: 4px;
+  padding: 0.5rem 0.85rem 0 0.85rem;
 }
-
 .panelFooter {
   flex-shrink: 0;
   border-top: 1px solid #333;
-  padding-top: 8px;
-  padding-bottom: 8px;
+  padding: 8px 0.85rem 0.85rem 0.85rem;
   margin-top: 4px;
 }
 
@@ -193,6 +190,7 @@
   align-items: center;
   justify-content: space-between;
   width: 100%;
+  box-sizing: border-box;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 5px;
@@ -359,6 +357,7 @@
 }
 .exportButton {
   width: 100%;
+  box-sizing: border-box;
   padding: 0.6rem;
   background: #2d7af7;
   color: #fff;
@@ -369,6 +368,8 @@
   cursor: pointer;
   letter-spacing: 0.03em;
   transition: background 0.15s ease;
+  display: block;
+  text-align: center;
 }
 
 .exportButton:hover:not(:disabled) {
