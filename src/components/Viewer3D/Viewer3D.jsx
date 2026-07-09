@@ -8,7 +8,12 @@ import {
   elevationSource,
   textureSource,
 } from "../../services/elevation";
-import { fetchBuildings, fetchWater, fetchRoads } from "../../services/osm";
+import {
+  fetchBuildings,
+  fetchWater,
+  fetchRoads,
+  fetchVegetation,
+} from "../../services/osm";
 import { buildTerrainGeometry } from "./buildTerrainGeometry";
 import {
   buildHypsometricCanvas,
@@ -22,6 +27,7 @@ import {
 import {
   suggestHillshadeZFactor,
   assessTerrainQuality,
+  computeSlope,
 } from "./terrainAnalysis";
 import { buildBuildingsGeometry } from "./buildBuildingsGeometry";
 import {
@@ -29,10 +35,12 @@ import {
   buildWaterwayRibbonGeometry,
 } from "./buildWaterGeometry";
 import { buildRoadsGeometry } from "./buildRoadsGeometry";
+import { buildVegetationGeometry } from "./buildVegetationGeometry";
 import Terrain from "./Terrain";
 import Buildings from "./Buildings";
 import Water from "./Water";
 import Roads from "./Roads";
+import Vegetation from "./Vegetation";
 import Contours from "./Contours";
 import FloodPlane from "./FloodPlane";
 import { floodStats } from "./floodAnalysis";
@@ -128,6 +136,8 @@ export default function Viewer3D({ bbox, onBack }) {
   const [waterSettingsOpen, setWaterSettingsOpen] = useState(false);
   const [showRoads, setShowRoads] = useState(false);
   const [roads, setRoads] = useState({ status: "idle" });
+  const [showVegetation, setShowVegetation] = useState(false);
+  const [vegetation, setVegetation] = useState({ status: "idle" });
   const [showContours, setShowContours] = useState(false);
   const [contourSpacing, setContourSpacing] = useState(50); // meters
   const [contourSettingsOpen, setContourSettingsOpen] = useState(false);
@@ -145,6 +155,7 @@ export default function Viewer3D({ bbox, onBack }) {
   const [hypsoBandM, setHypsoBandM] = useState(50);
   const [hypsoBandAuto, setHypsoBandAuto] = useState(null);
   const roadsCacheRef = useRef({});
+  const vegetationCacheRef = useRef({});
   const exporterRef = useRef(null);
   const [exporting, setExporting] = useState(false);
 
@@ -356,6 +367,31 @@ export default function Viewer3D({ bbox, onBack }) {
     };
   }, [showRoads, bbox]);
 
+  useEffect(() => {
+    if (!showVegetation) return;
+    const key = `${bbox.west},${bbox.south},${bbox.east},${bbox.north}`;
+    const cached = vegetationCacheRef.current[key];
+    if (cached) {
+      setVegetation({ status: "ready", data: cached });
+      return;
+    }
+    let cancelled = false;
+    setVegetation({ status: "loading" });
+    fetchVegetation(bbox)
+      .then((data) => {
+        if (cancelled) return;
+        vegetationCacheRef.current[key] = data;
+        setVegetation({ status: "ready", data });
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setVegetation({ status: "error", error: err.message });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showVegetation, bbox]);
+
   // --- Flood level initialization ---
   // Pick a sensible default flood level (midpoint of the terrain's elevation
   // range) the first time each heightmap loads. Tracking the heightmap object
@@ -457,6 +493,40 @@ export default function Viewer3D({ bbox, onBack }) {
     });
   }, [showRoads, roads, project, sampleElevation, buildResult]);
 
+  const vegetationSlope = useMemo(() => {
+    if (!showVegetation || terrain.status !== "ready" || !pixelSizeM)
+      return null;
+    return computeSlope(terrain.heightmap, pixelSizeM);
+  }, [showVegetation, terrain, pixelSizeM]);
+
+  const vegetationGeometry = useMemo(() => {
+    if (!showVegetation || vegetation.status !== "ready" || !project)
+      return null;
+    return buildVegetationGeometry(vegetation.data, {
+      project,
+      sampleElevation,
+      sceneElevation: makeSceneXZElevationSampler(
+        terrain.heightmap,
+        buildResult.bounds,
+      ),
+      verticalScale: buildResult.scale.verticalScale,
+      metersToUnits: buildResult.scale.metersToUnits,
+      bbox,
+      slope: vegetationSlope,
+      heightmap: terrain.heightmap,
+      bounds: buildResult.bounds,
+    });
+  }, [
+    showVegetation,
+    vegetation,
+    project,
+    sampleElevation,
+    buildResult,
+    terrain,
+    bbox,
+    vegetationSlope,
+  ]);
+
   const cameraPosition = useMemo(() => {
     if (!buildResult) return [200, 200, 200];
     const d = Math.max(
@@ -469,7 +539,8 @@ export default function Viewer3D({ bbox, onBack }) {
   const osmInUse =
     (showBuildings && buildings.status === "ready") ||
     (showWater && water.status === "ready") ||
-    (showRoads && roads.status === "ready");
+    (showRoads && roads.status === "ready") ||
+    (showVegetation && vegetation.status === "ready");
 
   const handleTerrainClick = (point) => {
     if (!profileTool) return;
@@ -673,6 +744,7 @@ export default function Viewer3D({ bbox, onBack }) {
             )}
           {buildingsGeometry && <Buildings geometry={buildingsGeometry} />}
           {roadsGeometry && <Roads geometry={roadsGeometry} />}
+          {vegetationGeometry && <Vegetation geometry={vegetationGeometry} />}
           {(waterInlandParts || waterwayGeometry || seaPlane) && (
             <Water
               inlandParts={waterInlandParts}
@@ -1039,6 +1111,20 @@ export default function Viewer3D({ bbox, onBack }) {
                       <span className={styles.muted}> {t.loading}</span>
                     )}
                     {roads.status === "error" && (
+                      <span className={styles.error}> {t.failed}</span>
+                    )}
+                  </label>
+                  <label className={styles.check}>
+                    <input
+                      type="checkbox"
+                      checked={showVegetation}
+                      onChange={(e) => setShowVegetation(e.target.checked)}
+                    />
+                    {t.vegetation}
+                    {vegetation.status === "loading" && (
+                      <span className={styles.muted}> {t.loading}</span>
+                    )}
+                    {vegetation.status === "error" && (
                       <span className={styles.error}> {t.failed}</span>
                     )}
                   </label>

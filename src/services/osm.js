@@ -677,6 +677,82 @@ export async function fetchRoads(bbox) {
   }
 }
 
+// Vegetation ground cover. Ways only — relations are deliberately excluded
+// to keep the query light (forests/parks are rarely mapped as multipolygons
+// at the scales this app targets).
+const VEGETATION_QUERY_TAGS = [
+  'way["natural"="wood"]',
+  'way["landuse"="forest"]',
+  'way["leisure"="park"]',
+  'way["leisure"="nature_reserve"]',
+  'way["natural"="scrub"]',
+  'way["landuse"="meadow"]',
+];
+
+function vegetationKindForTags(tags) {
+  if (tags?.natural === "wood" || tags?.landuse === "forest") return "forest";
+  if (tags?.leisure === "park" || tags?.leisure === "nature_reserve")
+    return "park";
+  if (tags?.natural === "scrub") return "scrub";
+  if (tags?.landuse === "meadow") return "meadow";
+  return null;
+}
+
+export async function fetchVegetation(bbox) {
+  console.group(
+    `[osm/vegetation] fetchVegetation bbox=${bbox.west.toFixed(4)},${bbox.south.toFixed(4)} → ${bbox.east.toFixed(4)},${bbox.north.toFixed(4)}`,
+  );
+  const overallStart = performance.now();
+  try {
+    const b = `${bbox.south},${bbox.west},${bbox.north},${bbox.east}`;
+    const query = `
+      [out:json][timeout:20];
+      (
+${VEGETATION_QUERY_TAGS.map((tag) => `        ${tag}(${b});`).join("\n")}
+      );
+      out body;
+      >;
+      out skel qt;
+    `;
+    const data = await overpassFetch(query, {
+      label: "vegetation",
+      timeoutMs: 20000,
+    });
+    const elements = data.elements || [];
+    const counts = { node: 0, way: 0, relation: 0 };
+    for (const el of elements) counts[el.type] = (counts[el.type] || 0) + 1;
+    console.log(`[osm/vegetation] response summary:`, {
+      total: elements.length,
+      ...counts,
+    });
+
+    const nodes = indexNodes(elements);
+    const polygons = [];
+    const byKind = {};
+    for (const el of elements) {
+      if (el.type !== "way") continue;
+      const kind = vegetationKindForTags(el.tags);
+      if (!kind) continue;
+      const coords = wayCoords(el, nodes);
+      if (coords.length < 3) continue;
+      polygons.push({ id: el.id, coords, kind });
+      byKind[kind] = (byKind[kind] || 0) + 1;
+    }
+    const totalMs = Math.round(performance.now() - overallStart);
+    console.log(
+      `[osm/vegetation] parsed ${polygons.length} polygon(s):`,
+      byKind,
+    );
+    console.log(`[osm/vegetation] ✓ done in ${totalMs}ms`);
+    return polygons;
+  } catch (err) {
+    console.error(`[osm/vegetation] ✗ failed:`, err);
+    throw err;
+  } finally {
+    console.groupEnd();
+  }
+}
+
 function parseRoads(data) {
   const nodes = new Map();
   for (const el of data.elements) {
