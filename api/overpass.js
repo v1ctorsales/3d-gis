@@ -97,7 +97,7 @@ async function tryMirror(url, body, winnerSignal, reqId) {
   }
 }
 
-export default async function handler(req) {
+async function handleOverpass(req) {
   const url = new URL(req.url, "http://localhost");
   let query;
 
@@ -174,4 +174,12 @@ export default async function handler(req) {
       },
     );
   }
+}
+
+export async function GET(req) {
+  return handleOverpass(req);
+}
+
+export async function POST(req) {
+  return handleOverpass(req);
 }
