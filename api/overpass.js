@@ -1,4 +1,4 @@
-export const config = { runtime: "edge" };
+export const config = { runtime: "nodejs", regions: ["iad1"] };
 
 // `overpass.osm.ch` is deliberately excluded: it responds in ~200ms with a
 // valid-shape JSON body whose `elements` array is always empty and whose
