@@ -11,18 +11,21 @@ const MIRRORS = [
   "https://overpass-api.de/api/interpreter",
   "https://lz4.overpass-api.de/api/interpreter",
   "https://overpass.openstreetmap.fr/api/interpreter",
+  "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
 ];
 
-// Vercel edge functions get ~25 s. Race all mirrors in parallel and let
-// the fastest healthy one win; if every mirror exceeds this timeout we
+// maxDuration is 60 s (see vercel.json). Race all mirrors in parallel and
+// let the fastest healthy one win; if every mirror exceeds this timeout we
 // abort cleanly with a 504 instead of having Vercel kill the function.
-const TIMEOUT_PER_MIRROR = 22000;
+// Must stay below the client's TIMEOUT_MS in src/services/osm.js.
+const TIMEOUT_PER_MIRROR = 38000;
 
 // Overpass mirrors rate-limit / reject requests without a meaningful
 // User-Agent string. Vercel edge functions don't send one by default,
 // which manifested as every query hanging until our own client timeout.
-const USER_AGENT =
-  "gis-3d-webapp/1.0 (Vercel edge proxy; +https://github.com/)";
+// Keep URLs out of it: overpass.openstreetmap.fr answers 403 to any UA
+// containing "http" (and to curl's default UA).
+const USER_AGENT = "gis-3d-webapp/1.0";
 
 function shortName(url) {
   try {

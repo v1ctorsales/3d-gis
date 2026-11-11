@@ -1,24 +1,13 @@
 const ENV_OVERRIDE = import.meta.env.VITE_OVERPASS_URL;
-const IS_PROD = import.meta.env.PROD;
 
-// In prod, the Vercel edge proxy at /api/overpass already races mirrors
-// (see api/overpass.js). In dev there's no proxy, so we replicate the
-// race here — without it, a single slow mirror (e.g. overpass.private.coffee
-// hanging for 60s) makes every layer toggle fail.
-// `overpass.osm.ch` is deliberately excluded: it responds in ~200ms with a
-// valid-shape JSON body whose `elements` array is always empty and whose
-// `timestamp_osm_base` is "114469" instead of an ISO date — i.e. the database
-// behind it is broken. Because it's the fastest responder, including it makes
-// it win every Promise.any race below and starves real layers of data.
-const DEV_MIRRORS = [
-  "https://overpass.private.coffee/api/interpreter",
-  "https://overpass.kumi.systems/api/interpreter",
-  "https://overpass-api.de/api/interpreter",
-  "https://lz4.overpass-api.de/api/interpreter",
-  "https://overpass.openstreetmap.fr/api/interpreter",
-];
+// Every request goes through /api/overpass (api/overpass.js), which races the
+// mirrors server-side. In dev, vite.config.js mounts the same handler. Calling
+// mirrors straight from the browser doesn't work: the browser always sends an
+// `Origin` header, and overpass.openstreetmap.fr answers 403 to any request
+// that has one.
+const PROXY_URL = "/api/overpass";
 
-const TIMEOUT_MS = 20000;
+const TIMEOUT_MS = 40000;
 
 function shortHost(url) {
   try {
@@ -95,7 +84,7 @@ async function fetchOne(
         throw new OverpassCancelledError(host, elapsed);
       }
       console.warn(
-        `${label} ${host} ✗ client timeout after ${elapsed}ms (${TIMEOUT_MS}ms cap)`,
+        `${label} ${host} ✗ client timeout after ${elapsed}ms (${timeoutMs}ms cap)`,
       );
       throw new OverpassTimeoutError(elapsed, host);
     }
@@ -110,47 +99,13 @@ async function fetchOne(
 
 /**
  * Raw Overpass request. Returns parsed JSON; throws on failure.
- * In dev (no proxy, no explicit VITE_OVERPASS_URL override) races
- * DEV_MIRRORS in parallel — first 2xx wins, the rest are aborted.
  * `meta.label` is prepended to every log line so each caller's traffic
  * is easy to follow in the console.
  */
 export async function overpassFetch(query, meta = {}) {
   const timeoutMs = meta.timeoutMs ?? TIMEOUT_MS;
   const label = meta.label ? `[osm/${meta.label}]` : "[osm]";
-
-  if (ENV_OVERRIDE)
-    return fetchOne(ENV_OVERRIDE, query, label, null, timeoutMs);
-  if (IS_PROD) return fetchOne("/api/overpass", query, label, null, timeoutMs);
-
-  // Dev: race all mirrors. Without this, one slow mirror = whole layer fails.
-  const winnerCtrl = new AbortController();
-  const overallStart = performance.now();
-  console.log(`${label} racing ${DEV_MIRRORS.length} mirrors in parallel`);
-  const attempts = DEV_MIRRORS.map((m) =>
-    fetchOne(m, query, label, winnerCtrl.signal, timeoutMs),
-  );
-  try {
-    const data = await Promise.any(attempts);
-    winnerCtrl.abort();
-    const totalMs = Math.round(performance.now() - overallStart);
-    console.log(`${label} ✓ race won in ${totalMs}ms`);
-    return data;
-  } catch (aggregate) {
-    const totalMs = Math.round(performance.now() - overallStart);
-    const errs = aggregate.errors || [aggregate];
-    const summary = errs
-      .filter((e) => !(e instanceof OverpassCancelledError))
-      .map((e) => `${e.host || "?"}: ${e.message}`);
-    console.warn(
-      `${label} ✗ all ${DEV_MIRRORS.length} mirrors failed in ${totalMs}ms:`,
-      summary,
-    );
-    // Promote the first real failure so callers see a useful error.
-    const real = errs.find((e) => !(e instanceof OverpassCancelledError));
-    if (real) throw real;
-    throw new OverpassTimeoutError(totalMs, "all-mirrors");
-  }
+  return fetchOne(ENV_OVERRIDE || PROXY_URL, query, label, null, timeoutMs);
 }
 
 class OverpassHttpError extends Error {
